@@ -185,8 +185,8 @@ class FollowObject:
         
         # self.state.cmd_vel.publish(move_cmd)
 
-        # move_cmd = Twist()
-        if (self.state.closest_obj_front_dist > .6 or self.state.closest_obj_front_dist < .4):
+        # move_cmd = Twist() - changed to 1.1 and .9 from .6 & .4
+        if (self.state.closest_obj_front_dist > 1.1 or self.state.closest_obj_front_dist < .9):
             if(self.state.closest_obj_front_dist - 0.5 > 0):
                 move_cmd.linear.x = .15
             else:
@@ -197,7 +197,7 @@ class FollowObject:
 
         self.state.cmd_vel.publish(move_cmd)
 
-        if(error <= .04 and (self.state.closest_obj_front_dist <= .6 and self.state.closest_obj_front_dist >= .4)):
+        if(error <= .04 and (self.state.closest_obj_front_dist <= 1.1 and self.state.closest_obj_front_dist >= .9)):
             move_cmd = Twist()
             self.state.cmd_vel.publish(Twist())
         
@@ -309,9 +309,29 @@ def main():
         if not state.current_action.done:
             state.current_action.act()
         else:
-            state.current_action = FollowObject(state)
+            break
+            #state.current_action = FollowObject(state)
 
         rate.sleep()
+
+    state.current_action = Turn(90)
+    while not rospy.is_shutdown():
+    	if not state.current_action.done:
+    	    state.current_action.act()
+    	else:
+        	break
+
+    rate.sleep()
+
+    state.current_action = Drive(1)
+    while not rospy.is_shutdown():
+    	if not state.current_action.done:
+    	    state.current_action.act()
+    	else:
+        	break
+
+    rate.sleep()
+
 
 
     # drive the robot forwards or backwards
@@ -328,15 +348,15 @@ def main():
     #Follow the Wall
 
     # turn to closest object
-    state.current_action = FollowWall(state)
+    # state.current_action = FollowWall(state)
 
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            state.current_action = FollowWall(state)
+    # while not rospy.is_shutdown():
+    #     if not state.current_action.done:
+    #         state.current_action.act()
+    #     else:
+    #         state.current_action = FollowWall(state)
 
-        rate.sleep()
+    #     rate.sleep()
 
 
 
