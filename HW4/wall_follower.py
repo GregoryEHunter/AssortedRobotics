@@ -34,6 +34,10 @@ def findObjFront(array):
     else:
         return (array[315:360].index(temp2) + 315, temp2)
 
+def findObjSide(array):
+    dist = min(i for i in array[60:120] if i > 0.0)
+    return (dist)
+
 class Turn:
     def __init__(self, state, angle):
         self.state = state
@@ -97,6 +101,42 @@ class Drive:
         else:
             self.state.cmd_vel.publish(Twist())
             self.done = True
+
+#Looks to the right of the robot (over a 60 degree arc, 30 on each side of 90)
+#Takes the closest object and turns left if too close, right if too far
+#keeps track of how far off the robots original heading so as not to continue turning
+#(Or to only turn once if not 1 meter away fromt the wall)
+class FollowWall:
+    def __init__(self, state):
+        self.state = state
+        distance = self.state.closest_obj_side
+
+        self.done = False
+    
+
+    def act(self):
+        move_cmd = Twist()
+
+        if (distance > 1):
+            if self.FakeHeading >= 0:
+                move_cmd.angular.z = -.4
+                self.FakeHeading--
+        elif (distance < 1):
+            if self.FakeHeading <=0:
+                move_cmd.angular.z = .4
+                self.FakeHeading++
+        else
+            move_cmd.angular = 0
+
+        
+        move_cmd.linear.x = .15
+
+        self.state.cmd_vel.publish(move_cmd)
+
+
+        self.done = True
+
+
 
 # scan for closest object around it and turn towards it
 class TurnToObject:
@@ -176,6 +216,7 @@ class TurtlebotState:
         self.y = None
         self.ready = False
         self.current_action = None
+        self.FakeHeading = 0
 
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
@@ -207,6 +248,10 @@ class TurtlebotState:
         self.closest_obj_front = findObjFront(msg.ranges)
         self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
         self.closest_obj_front_dist = self.closest_obj_front[1]
+
+
+        #Looking to the right side over a 60 degree arc
+        self.closest_obj_side = findObjSide(msg.ranges):
 
         self.ready = True
 
@@ -278,6 +323,20 @@ def main():
     #         break
 
     #     rate.sleep()
+
+
+    #Follow the Wall
+
+    # turn to closest object
+    state.current_action = FollowWall(state)
+
+    while not rospy.is_shutdown():
+        if not state.current_action.done:
+            state.current_action.act()
+        else:
+            state.current_action = FollowWall(state)
+
+        rate.sleep()
 
 
 
