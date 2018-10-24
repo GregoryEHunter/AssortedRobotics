@@ -120,12 +120,12 @@ class FollowWall:
         if (distance > 1):
             if self.FakeHeading >= 0:
                 move_cmd.angular.z = -.4
-                self.FakeHeading--
+                self.FakeHeading -= 1
         elif (distance < 1):
             if self.FakeHeading <=0:
                 move_cmd.angular.z = .4
-                self.FakeHeading++
-        else
+                self.FakeHeading += 1
+        else:
             move_cmd.angular = 0
 
         
@@ -251,7 +251,7 @@ class TurtlebotState:
 
 
         #Looking to the right side over a 60 degree arc
-        self.closest_obj_side = findObjSide(msg.ranges):
+        self.closest_obj_side = findObjSide(msg.ranges)
 
         self.ready = True
 
