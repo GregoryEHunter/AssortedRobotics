@@ -198,9 +198,6 @@ class FollowObject:
 
 
 class WallFollow:
-    """
-    the robot drives parallel to a wall a certain distance away from the wall.
-    """
     def __init__(self, state):
         self.state = state
 
@@ -318,11 +315,8 @@ class TurtlebotState:
 
 def main():
     rospy.init_node("turn_to")
-
     state = TurtlebotState()
-
     rospy.on_shutdown(state.shutdown)
-
     rate = rospy.Rate(20)
 
 
@@ -330,81 +324,65 @@ def main():
     for i in range(20):
         rate.sleep()
 
-
-    # turn to another angle (away from an object)
-
-    # state.current_action = Turn(state, -pi/2)
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #         break
-    #     rate.sleep()
-
-
-    # drive the robot forwards or backwards
-
-    # state.current_action = Drive(state, -.5)
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #         break
-
-    #     rate.sleep()
-
-
-
+    #####################################
+    #Follow Object Code
     # turn to closest object
     state.current_action = TurnToObject(state)
-
     while not rospy.is_shutdown():
         if not state.current_action.done:
             state.current_action.act()
         else:
             break
-
         rate.sleep()
 
+    state.current_action = FollowObject(state)
+    while not rospy.is_shutdown():
+        if not state.current_action.done:
+            state.current_action.act()
+        else:
+             state.current_action = WallFollow(state)
+        rate.sleep()
+    #####################################
 
+
+    ######################################
+    #Wall Follow Code:
+	# turn to closest object
+    state.current_action = TurnToObject(state)
+    while not rospy.is_shutdown():
+        if not state.current_action.done:
+            state.current_action.act()
+        else:
+            break
+        rate.sleep()
 
     state.current_action = WallFollow(state)
     while not rospy.is_shutdown():
         rospy.loginfo("state.meter" + str(state.meter))
         if not state.current_action.done:
             state.current_action.act()
-
         elif state.meter is True:
             break
         else:
              state.current_action = WallFollow(state)
-
         rate.sleep()
-
-
 
     state.current_action = Turn(state,-pi/2)
-
     while not rospy.is_shutdown():
         if not state.current_action.done:
             state.current_action.act()
         else:
             break
-
         rate.sleep()
-
-
 
     state.current_action = Drive(state, 1)
-
     while not rospy.is_shutdown():
         if not state.current_action.done:
             state.current_action.act()
         else:
             break
-
         rate.sleep()
-
+    #########################################
 
 
 main()
