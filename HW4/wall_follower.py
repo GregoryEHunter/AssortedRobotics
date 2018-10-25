@@ -10,31 +10,45 @@ from angles import degrees_to_radians
 
 from distances import euclidian_distance
 
+
 def yaw_from_odom(msg):
+    """
+    callback function to obtain yaw angle from odometry message
+    """
     orientation_q = msg.pose.pose.orientation
     orientation_vec = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
     (roll, pitch, yaw) = euler_from_quaternion(orientation_vec)
 
     return yaw
 
-# given an array of ranges, get the angle of the closest object around the robot
+
 def findObj360(array):
+    """
+    given an array of ranges, get the angle of the closest object around the robot
+    """
     temp = min(i for i in array if i > 0.0)
     return (array.index(temp), temp)
 
-# given an array of ranges, get the angle of the closest object 90 degrees in front of robot (45 in each direction)
+
 def findObjFront(array):
+    """
+    given an array of ranges, get the angle of the closest object 90 degrees in front of robot 
+    (45 in each direction)
+    """
     temp = min(i for i in array[0:45] if i > 0.0)
-    #print(array[0:45].index(temp))
     temp2 = min(i for i in array[315:360] if i > 0.0)
-    #print(array[315:360].index(temp2) +315)
 
     if temp <= temp2:
         return (array[0:45].index(temp), temp)
     else:
         return (array[315:360].index(temp2) + 315, temp2)
 
+
 class Turn:
+    """
+    turn the robot by an angle defined in radians, if angle is defined as positive the robot will 
+    turn clockwise
+    """
     def __init__(self, state, angle):
         self.state = state
 
@@ -53,7 +67,6 @@ class Turn:
         rospy.loginfo("Current angle: " + str( self.state.angle))
 
         if(error > .02):
-
             move_cmd = Twist()
             if self.clockwise:
                 move_cmd.angular.z = -.2
@@ -65,8 +78,12 @@ class Turn:
             self.state.cmd_vel.publish(Twist())
             self.done = True
 
-# drive a certain distance forward
+
 class Drive:
+    """
+    drive the robot by a certain distance in meters forwards or backwards. If the distance is
+    negative, the robot will move backwards.
+    """
     def __init__(self, state, distance):
         self.state = state
 
@@ -83,7 +100,8 @@ class Drive:
         self.done = False
 
     def act(self):
-        error = abs(self.target_distance - euclidian_distance(self.init_x, self.state.x, self.init_y, self.state.y))
+        error = abs(self.target_distance - euclidian_distance(self.init_x, self.state.x, 
+            self.init_y, self.state.y))
         rospy.loginfo("Current x, y: " + str( self.state.x) + str(self.state.y))
 
         if(error > .02):
@@ -98,25 +116,39 @@ class Drive:
             self.state.cmd_vel.publish(Twist())
             self.done = True
 
-# scan for closest object around it and turn towards it
+
 class TurnToObject:
+    """
+    the robot uses tha range finder to grab the direction of the closest object and rotate such 
+    that its heading angle points towards the closest object.
+    """
     def __init__(self, state):
         self.state = state
         self.done = False
 
     def act(self):
-        # turn to the angle closest to the object
         goal = rectify_angle_pi(self.state.closest_obj_ang)
         rospy.loginfo("Angle of Closest Object: " + str(goal))
-        rospy.loginfo("Angle of Closest Object in Front: " + str(rectify_angle_pi(self.state.closest_obj_front_ang)))
+        rospy.loginfo("Angle of Closest Object in Front: " + str(rectify_angle_pi(
+            self.state.closest_obj_front_ang)))
 
         self.state.current_action = Turn(self.state, goal)
         self.done = True
 
 
 class FollowObject:
+    """
+    the robot follows the closest object in front of it at an angle of +pi/2 and -pi/2 by sending
+    angular and linear command velocities.
+    """
     def __init__(self, state):
         self.state = state
+
+        # error and bound limit constants
+        self.lower_bound = 0.4
+        self.upper_bound = 0.6
+        self.angle_err_lim = 0.04
+
         goal_angle = rectify_angle_pi(self.state.closest_obj_front_ang)
 
         if goal_angle >= 0:
@@ -129,13 +161,13 @@ class FollowObject:
         self.done = False
 
     def act(self):
-        # follow closest object that is in the -pi/4 to pi/4 range
         goal = rectify_angle_pi(self.state.closest_obj_front_ang)
         error = abs(self.target_angle - self.state.angle)
 
         move_cmd = Twist()
 
-        if(error > .04):
+        # sends an angular command velocity if the current robot angle is off by .04 radians
+        if(error > self.angle_err_lim):
             if self.clockwise:
                 move_cmd.angular.z = -.4
             else:
@@ -143,10 +175,9 @@ class FollowObject:
         else:
             move_cmd.angular.z = 0
         
-        # self.state.cmd_vel.publish(move_cmd)
-
-        # move_cmd = Twist()
-        if (self.state.closest_obj_front_dist > .6 or self.state.closest_obj_front_dist < .4):
+        # sends a linear command velocity if the closest object distance is not between 0.4 and 0.6m
+        if (self.state.closest_obj_front_dist > self.upper_bound or 
+            self.state.closest_obj_front_dist < self.lower_bound):
             if(self.state.closest_obj_front_dist - 0.5 > 0):
                 move_cmd.linear.x = .15
             else:
@@ -157,15 +188,28 @@ class FollowObject:
 
         self.state.cmd_vel.publish(move_cmd)
 
-        if(error <= .04 and (self.state.closest_obj_front_dist <= .6 and self.state.closest_obj_front_dist >= .4)):
+        # sends 0 command velocity if the robot is in a desired position
+        if(error <= self.angle_err_lim and (self.state.closest_obj_front_dist <= self.upper_bound 
+                and self.state.closest_obj_front_dist >= self.lower_bound)):
             move_cmd = Twist()
             self.state.cmd_vel.publish(Twist())
         
         self.done = True              
 
+
 class WallFollow:
+    """
+    the robot drives parallel to a wall a certain distance away from the wall.
+    """
     def __init__(self, state):
         self.state = state
+
+        # error and bound limit constants
+        self.lower_bound = 0.9
+        self.upper_bound = 1.1
+        self.angle_err_lim = 0.04
+
+
         goal_angle = rectify_angle_pi(self.state.closest_obj_front_ang)
 
         if goal_angle >= 0:
@@ -178,13 +222,12 @@ class WallFollow:
         self.done = False
 
     def act(self):
-        # follow closest object that is in the -pi/4 to pi/4 range
         goal = rectify_angle_pi(self.state.closest_obj_front_ang)
         error = abs(self.target_angle - self.state.angle)
 
         move_cmd = Twist()
 
-        if(error > .04):
+        if(error > self.angle_err_lim):
             if self.clockwise:
                 move_cmd.angular.z = -.4
             else:
@@ -192,10 +235,7 @@ class WallFollow:
         else:
             move_cmd.angular.z = 0
         
-        # self.state.cmd_vel.publish(move_cmd)
-
-        # move_cmd = Twist()
-        if (self.state.closest_obj_front_dist > 1.1 or self.state.closest_obj_front_dist < .9):
+        if (self.state.closest_obj_front_dist > self.upper_bound or self.state.closest_obj_front_dist < self.lower_bound):
             if(self.state.closest_obj_front_dist - 0.5 > 0):
                 move_cmd.linear.x = .15
             else:
@@ -207,21 +247,21 @@ class WallFollow:
         self.state.cmd_vel.publish(move_cmd)
         print(str(error) + "\tERROR")
         print(str(self.state.closest_obj_front_dist) + "closest_obj_front_dist")
-        if(error <= .04 and (self.state.closest_obj_front_dist <= 1.1 and self.state.closest_obj_front_dist >= .9)):
+        if(error <= self.angle_err_lim and (self.state.closest_obj_front_dist <= self.upper_bound and self.state.closest_obj_front_dist >= self.lower_bound)):
             move_cmd = Twist()
             print("setting meter to true GOTHERE")
             self.state.cmd_vel.publish(Twist())
             self.state.meter = True
-            #self.state.current_action = 
-
         
         self.done = True              
 
 
 class TurtlebotState:
+    """
+    stores the current state of the robot.
+    """
     def __init__(self):
         # start up the subscribers to monitor state
-
         self.subscriber_odom = rospy.Subscriber("/odom", Odometry, self.update_odom)
         self.subscriber_scan = rospy.Subscriber("/scan", LaserScan, self.update_scan)
 
@@ -242,6 +282,9 @@ class TurtlebotState:
             rate.sleep()
 
     def update_odom(self, msg):
+        """
+        updates odometry information of the robot.
+        """
         self.angle = yaw_from_odom(msg)
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
@@ -249,12 +292,9 @@ class TurtlebotState:
         self.ready = True
 
     def update_scan(self, msg):
-        # rospy.loginfo(msg)
-        # rospy.loginfo(len(msg.ranges))
-        # rospy.loginfo(msg.range_min)
-        # rospy.loginfo(min(msg.ranges))
-        # rospy.loginfo(msg.ranges.index(min(msg.ranges)))
-
+        """
+        updates laser range finder environment information around the robot.
+        """
         # in 360 degree range
         self.closest_obj_ang = degrees_to_radians(findObj360(msg.ranges)[0])
 
@@ -266,16 +306,15 @@ class TurtlebotState:
         self.ready = True
 
     def shutdown(self):
-
+        """
+        shutsdown the robot.
+        """
         rospy.loginfo("Shutting down turtlebot...")
         self.cmd_vel.publish(Twist())
         rospy.sleep(1)
         rospy.loginfo("Goodbye.")
 
 
-
-# TO DO (for prob 1)
-# how to queuee commands?
 
 def main():
     rospy.init_node("turn_to")
@@ -293,14 +332,27 @@ def main():
 
 
     # turn to another angle (away from an object)
-    # state.current_action = Turn(state, -pi/2)
 
+    # state.current_action = Turn(state, -pi/2)
     # while not rospy.is_shutdown():
     #     if not state.current_action.done:
     #         state.current_action.act()
     #     else:
     #         break
     #     rate.sleep()
+
+
+    # drive the robot forwards or backwards
+
+    # state.current_action = Drive(state, -.5)
+    # while not rospy.is_shutdown():
+    #     if not state.current_action.done:
+    #         state.current_action.act()
+    #     else:
+    #         break
+
+    #     rate.sleep()
+
 
 
     # turn to closest object
@@ -314,6 +366,8 @@ def main():
 
         rate.sleep()
 
+
+
     state.current_action = WallFollow(state)
     while not rospy.is_shutdown():
         rospy.loginfo("state.meter" + str(state.meter))
@@ -321,13 +375,13 @@ def main():
             state.current_action.act()
 
         elif state.meter is True:
-
-
             break
         else:
              state.current_action = WallFollow(state)
 
         rate.sleep()
+
+
 
     state.current_action = Turn(state,-pi/2)
 
@@ -338,6 +392,9 @@ def main():
             break
 
         rate.sleep()
+
+
+
     state.current_action = Drive(state, 1)
 
     while not rospy.is_shutdown():
@@ -347,16 +404,6 @@ def main():
             break
 
         rate.sleep()
-
-    # drive the robot forwards or backwards
-    # state.current_action = Drive(state, -.5)
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #         break
-
-    #     rate.sleep()
 
 
 
