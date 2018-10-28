@@ -260,9 +260,10 @@ class TurtlebotState:
     def __init__(self):
 
         self.pose_msg = None
+        self.yaw_msg = None
         self.scan_msg = None
 
-        self.dict = {"Odom":None, "ScanRanges" : None}
+        self.dict = {"position":None, "orientation" : None, "scan" : None}
 
         # start up the subscribers to monitor state
         self.subscriber_odom = rospy.Subscriber("/odom", Odometry, self.update_odom)
@@ -290,17 +291,13 @@ class TurtlebotState:
         """
         updates odometry information of the robot.
         """
-        self.pose_msg = msg.pose.pose
+        self.pose_msg = msg.pose.pose.position
 
         self.angle = yaw_from_odom(msg)
+        self.yaw_msg = self.angle
+
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
-
-        # rospy.loginfo(msg.pose.pose)
-        # # open a file / create if it does not exist
-        # file = open('robot.txt', 'w')
-        # file.write(msg.pose.pose)
-        # file.close()
 
         self.ready = True
 
@@ -318,23 +315,38 @@ class TurtlebotState:
         self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
         self.closest_obj_front_dist = self.closest_obj_front[1]
 
-        # # open a file / create if it does not exist
-        # self.file = open('robot.dat', 'a')
-        # self.file.append(msg)
-        # self.file.close()
-
         self.ready = True
 
     def data_to_file(self):
+
+        # convert data to JSON format
         rospy.Rate(5).sleep()
-        self.dict["Odom"] = self.pose_msg
+        # string manipulation and dictionary addition for position
+        self.pose_msg = "\"" + str(self.pose_msg).replace("\n", "\n\"")
+        self.pose_msg = str(self.pose_msg).replace(":", "\":")
+        self.dict["position"] = str(self.pose_msg)
         rospy.Rate(5).sleep()
-        self.dict["ScanRanges"] = self.scan_msg
+
+        # string manipultation and dictionary addition for scanning data
+        self.dict["scan"] = "\"ranges\" : " + str(self.scan_msg)
+        rospy.Rate(5).sleep()
+
+        # string manipultation and dictionary addition for yaw data
+        self.dict["orientation"] = "\"yaw\" : " + str(self.yaw_msg)
 
         with open("robot.txt", "w") as file:
+            file.write("{\"robot\": {\n")
             for key, value in self.dict.iteritems():
                 if value:
-                    file.write(str(key) + ":\n" + str(value) + "\n\n")
+                    # all values should be comma separated, lists should have square brackets
+                    val = str(value).replace("\n", ",\n")
+                    val = str(val).replace("(", "[")
+                    val = str(val).replace(")", "]")
+
+                    file.write("\""+str(key) + "\"" + ":{ \n" + str(val) + "}")
+                if(key != "scan"):
+                    file.write(",\n")
+            file.write("}}")
 
     def shutdown(self):
         """
