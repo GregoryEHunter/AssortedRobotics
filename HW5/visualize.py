@@ -258,9 +258,17 @@ class TurtlebotState:
     stores the current state of the robot.
     """
     def __init__(self):
+
+        self.pose_msg = None
+        self.scan_msg = None
+
+        self.dict = {"Odom":None, "ScanRanges" : None}
+
         # start up the subscribers to monitor state
         self.subscriber_odom = rospy.Subscriber("/odom", Odometry, self.update_odom)
         self.subscriber_scan = rospy.Subscriber("/scan", LaserScan, self.update_scan)
+
+        self.data_to_file()
 
         self.angle = None
         self.x = None
@@ -282,9 +290,17 @@ class TurtlebotState:
         """
         updates odometry information of the robot.
         """
+        self.pose_msg = msg.pose.pose
+
         self.angle = yaw_from_odom(msg)
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
+
+        # rospy.loginfo(msg.pose.pose)
+        # # open a file / create if it does not exist
+        # file = open('robot.txt', 'w')
+        # file.write(msg.pose.pose)
+        # file.close()
 
         self.ready = True
 
@@ -292,6 +308,8 @@ class TurtlebotState:
         """
         updates laser range finder environment information around the robot.
         """
+        self.scan_msg = msg.ranges
+
         # in 360 degree range
         self.closest_obj_ang = degrees_to_radians(findObj360(msg.ranges)[0])
 
@@ -300,7 +318,23 @@ class TurtlebotState:
         self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
         self.closest_obj_front_dist = self.closest_obj_front[1]
 
+        # # open a file / create if it does not exist
+        # self.file = open('robot.dat', 'a')
+        # self.file.append(msg)
+        # self.file.close()
+
         self.ready = True
+
+    def data_to_file(self):
+        rospy.Rate(5).sleep()
+        self.dict["Odom"] = self.pose_msg
+        rospy.Rate(5).sleep()
+        self.dict["ScanRanges"] = self.scan_msg
+
+        with open("robot.txt", "w") as file:
+            for key, value in self.dict.iteritems():
+                if value:
+                    file.write(str(key) + ":\n" + str(value) + "\n\n")
 
     def shutdown(self):
         """
@@ -324,65 +358,65 @@ def main():
     for i in range(20):
         rate.sleep()
 
-    #####################################
-    #Follow Object Code
-    # turn to closest object
-    state.current_action = TurnToObject(state)
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            break
-        rate.sleep()
+    # #####################################
+    # #Follow Object Code
+    # # turn to closest object
+    # state.current_action = TurnToObject(state)
+    # while not rospy.is_shutdown():
+    #     if not state.current_action.done:
+    #         state.current_action.act()
+    #     else:
+    #         break
+    #     rate.sleep()
 
-    state.current_action = FollowObject(state)
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-             state.current_action = WallFollow(state)
-        rate.sleep()
-    #####################################
+    # state.current_action = FollowObject(state)
+    # while not rospy.is_shutdown():
+    #     if not state.current_action.done:
+    #         state.current_action.act()
+    #     else:
+    #          state.current_action = WallFollow(state)
+    #     rate.sleep()
+    # #####################################
 
 
-    ######################################
-    #Wall Follow Code:
-	# turn to closest object
-    state.current_action = TurnToObject(state)
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            break
-        rate.sleep()
+ #    ######################################
+ #    #Wall Follow Code:
+    # # turn to closest object
+ #    state.current_action = TurnToObject(state)
+ #    while not rospy.is_shutdown():
+ #        if not state.current_action.done:
+ #            state.current_action.act()
+ #        else:
+ #            break
+ #        rate.sleep()
 
-    state.current_action = WallFollow(state)
-    while not rospy.is_shutdown():
-        rospy.loginfo("state.meter" + str(state.meter))
-        if not state.current_action.done:
-            state.current_action.act()
-        elif state.meter is True:
-            break
-        else:
-             state.current_action = WallFollow(state)
-        rate.sleep()
+ #    state.current_action = WallFollow(state)
+ #    while not rospy.is_shutdown():
+ #        rospy.loginfo("state.meter" + str(state.meter))
+ #        if not state.current_action.done:
+ #            state.current_action.act()
+ #        elif state.meter is True:
+ #            break
+ #        else:
+ #             state.current_action = WallFollow(state)
+ #        rate.sleep()
 
-    state.current_action = Turn(state,-pi/2)
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            break
-        rate.sleep()
+ #    state.current_action = Turn(state,-pi/2)
+ #    while not rospy.is_shutdown():
+ #        if not state.current_action.done:
+ #            state.current_action.act()
+ #        else:
+ #            break
+ #        rate.sleep()
 
-    state.current_action = Drive(state, 1)
-    while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            break
-        rate.sleep()
-    #########################################
+ #    state.current_action = Drive(state, 1)
+ #    while not rospy.is_shutdown():
+ #        if not state.current_action.done:
+ #            state.current_action.act()
+ #        else:
+ #            break
+ #        rate.sleep()
+ #    #########################################
 
 
 main()
