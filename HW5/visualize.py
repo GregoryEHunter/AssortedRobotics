@@ -51,7 +51,7 @@ def Hough_Transform(array):
     precision = 50
     dist_min = .05
     dist_max = 4
-    threshold = 5
+    threshold = 1
 
     #Take all the ranges (and their corresponding angle) and convert to x,y coordinates for each point
     #make an array of 360 rows and 2 columns where each row is a point
@@ -59,27 +59,35 @@ def Hough_Transform(array):
     for i in range(360):
         Cartesian.insert(i, [array[i]*np.cos(np.deg2rad(i)),array[i]*np.sin(np.deg2rad(i))])
 
+
     #only look at lines that are betwen 5cm and 4m away at their closest point
-    theta = np.linspace(0,2*pi, precision)
-    r = np.linspace(dist_min,dist_max, precision)
+    #theta = np.linspace(0,2*pi, precision)
+    #r = np.linspace(dist_min,dist_max, precision)
 
     #2D array which is #of discreet thetas by # of discrete distances
-    lines = [0 for col in range(theta) for row in range(r)]
+    lines = np.zeros((precision,precision))
 
     for i in range(360):
-        r  = Cartesian[i][1]*np.cos(np.deg2rad(i)) + Cartesian[i][2]*np.sin(np.deg2rad(i))
+        for j in range(360):
+            r  = Cartesian[i][0]*np.cos(np.deg2rad(j)) + Cartesian[i][1]*np.sin(np.deg2rad(j))
+            if (r > dist_min) & (r < dist_max):
+                #integer division to put r/theta into a discrete box on the hough map
+                r = (r-dist_min)/(2*pi/precision)
+                x1 = np.deg2rad(j)
+                x2 = float(dist_max)/float(precision)
+                t = x1/x2
 
-        if r > dist_min & r < dist_max:
-            #integer division to put r/theta into a discrete box on the hough map
-            r = (r-dist_min)//(len(r))
-            t = np.deg2rad(i)//len(theta)
-            lines[r][t] += 1
+                lines[int(r)][int(t)]+=1
+                #print("Adding a Hough point at {},{}").format(int(r),int(t))
 
     #If any of the squares in the map are above the threshold, they represent a line the robot detected
-    for i in range(len(r)):
-        for j in range(len(t))
-            if lines[i][j] > threshold:
-                rospy.loginfo("Line with coordinates ({},{}) in polar").format(i,j)
+    for i in range(precision):
+        print{" "}
+        for j in range(precision):
+            #if lines[i][j] > threshold:
+                #print("Line with coordinates ({},{}) in polar").format(i,j)
+
+        
 
 
 
@@ -356,6 +364,7 @@ class TurtlebotState:
         self.closest_obj_front = findObjFront(msg.ranges)
         self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
         self.closest_obj_front_dist = self.closest_obj_front[1]
+        self.Hough_T = Hough_Transform(msg.ranges)
 
         self.ready = True
 
