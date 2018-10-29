@@ -1,9 +1,12 @@
 import rospy
+import numpy as np
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from tf.transformations import euler_from_quaternion
 from math import pi
+from array import *
+
 
 from angles import rectify_angle_pi
 from angles import degrees_to_radians
@@ -42,6 +45,45 @@ def findObjFront(array):
         return (array[0:45].index(temp), temp)
     else:
         return (array[315:360].index(temp2) + 315, temp2)
+
+def Hough_Transform(array):
+
+    precision = 50
+    dist_min = .05
+    dist_max = 4
+    threshold = 5
+
+    #Take all the ranges (and their corresponding angle) and convert to x,y coordinates for each point
+    #make an array of 360 rows and 2 columns where each row is a point
+    Cartesian = [[0 for col in range(2)] for row in range(360)]
+    for i in range(360):
+        Cartesian.insert(i, [array[i]*np.cos(np.deg2rad(i)),array[i]*np.sin(np.deg2rad(i))])
+
+    #only look at lines that are betwen 5cm and 4m away at their closest point
+    theta = np.linspace(0,2*pi, precision)
+    r = np.linspace(dist_min,dist_max, precision)
+
+    #2D array which is #of discreet thetas by # of discrete distances
+    lines = [0 for col in range(theta) for row in range(r)]
+
+    for i in range(360):
+        r  = Cartesian[i][1]*np.cos(np.deg2rad(i)) + Cartesian[i][2]*np.sin(np.deg2rad(i))
+
+        if r > dist_min & r < dist_max:
+            #integer division to put r/theta into a discrete box on the hough map
+            r = (r-dist_min)//(len(r))
+            t = np.deg2rad(i)//len(theta)
+            lines[r][t] += 1
+
+    #If any of the squares in the map are above the threshold, they represent a line the robot detected
+    for i in range(len(r)):
+        for j in range(len(t))
+            if lines[i][j] > threshold:
+                rospy.loginfo("Line with coordinates ({},{}) in polar").format(i,j)
+
+
+
+
 
 
 class Turn:
