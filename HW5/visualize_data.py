@@ -5,19 +5,7 @@ from angles import degrees_to_radians
 import matplotlib.pyplot as plt
 from math import cos, sin, pi
 
-# robot.txt file format
-# {"robot": {
-#     "position": {
-#         "x": 32,
-#         "y": 12
-#     },
-#     "orientation": { 
-#         "yaw": 232
-#     },
-#     "scan": {
-#         "ranges": [1,2,3...]
-#     }
-# }}    
+# Note: robot.txt file format should be a JSON blob
 
 # open file put into python object
 with open("robot.txt") as file:
@@ -30,7 +18,7 @@ robot_theta = data["robot"]["orientation"]["yaw"]
 
 scan_ranges = data["robot"]["scan"]["ranges"]
 
-# iterate through ranges and plot
+# init plot
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
@@ -41,6 +29,7 @@ ax.scatter(robot_x, robot_y, color='red', marker= 'x')
 x = []
 y = []
 
+# iterate through ranges and plot
 for i in range(len(scan_ranges)):
 	if scan_ranges[i] >= 0.03:
 		x.append(robot_x + scan_ranges[i] * cos(robot_theta + degrees_to_radians(i)))
@@ -49,5 +38,3 @@ for i in range(len(scan_ranges)):
 ax.scatter(x, y, color='blue', marker= '.')
 
 plt.show()
-
-
