@@ -47,11 +47,13 @@ def findObjFront(array):
         return (array[315:360].index(temp2) + 315, temp2)
 
 def Hough_Transform(array):
+    print("Entered Hough")
 
-    precision = 50
+    precision_t = 36
+    precision_R = 40
     dist_min = .05
     dist_max = 4
-    threshold = 1
+    threshold = 600
 
     #Take all the ranges (and their corresponding angle) and convert to x,y coordinates for each point
     #make an array of 360 rows and 2 columns where each row is a point
@@ -60,32 +62,30 @@ def Hough_Transform(array):
         Cartesian.insert(i, [array[i]*np.cos(np.deg2rad(i)),array[i]*np.sin(np.deg2rad(i))])
 
 
-    #only look at lines that are betwen 5cm and 4m away at their closest point
-    #theta = np.linspace(0,2*pi, precision)
-    #r = np.linspace(dist_min,dist_max, precision)
-
-    #2D array which is #of discreet thetas by # of discrete distances
-    lines = np.zeros((precision,precision))
+    #2D array which is #of discreet distances by # of discrete thetas
+    lines = np.zeros((precision_R,precision_t))
 
     for i in range(360):
         for j in range(360):
             r  = Cartesian[i][0]*np.cos(np.deg2rad(j)) + Cartesian[i][1]*np.sin(np.deg2rad(j))
             if (r > dist_min) & (r < dist_max):
                 #integer division to put r/theta into a discrete box on the hough map
-                r = (r-dist_min)/((dist_max-dist_min)/precision)
+                r2 = (r-dist_min)/((dist_max-dist_min)/precision_R)
                 x1 = np.deg2rad(j)
-                x2 = (2*pi)/precision
+                x2 = (2*pi)/precision_t
                 t = x1/x2
 
-                lines[int(r)][int(t)]+=1
-                print("Adding a Hough point at {},{}").format(int(r),int(t))
+                lines[int(r2)][int(t)]+=1
+
 
     #If any of the squares in the map are above the threshold, they represent a line the robot detected
-    for i in range(precision):
+    for i in range(precision_R):
         #print{" "}
-        for j in range(precision):
-            #if lines[i][j] > threshold:
-                #print("Line with coordinates ({},{}) in polar").format(i,j)
+        for j in range(precision_t):
+            if lines[i][j] > threshold:
+                r = i*((dist_max-dist_min)/precision_R)+dist_min
+                t = j*360/precision_t
+                print("Line with coordinates ({},{}) in polar (degrees) cell value={}").format(r,t,lines[i][j])
 
         
 
@@ -417,9 +417,12 @@ def main():
     rate = rospy.Rate(20)
 
 
-    # pause for a bit
-    for i in range(20):
+    while not rospy.is_shutdown():
         rate.sleep()
+
+    # pause for a bit
+    #for i in range(40):
+    #   rate.sleep()
 
     # #####################################
     # #Follow Object Code
@@ -483,5 +486,3 @@ def main():
 
 
 main()
-
-
