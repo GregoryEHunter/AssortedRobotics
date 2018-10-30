@@ -50,10 +50,10 @@ def Hough_Transform(array):
     print("Entered Hough")
 
     precision_t = 36
-    precision_R = 40
+    precision_R = 100
     dist_min = .05
     dist_max = 4
-    threshold = 600
+    threshold = 400
 
     #Take all the ranges (and their corresponding angle) and convert to x,y coordinates for each point
     #make an array of 360 rows and 2 columns where each row is a point
@@ -78,27 +78,34 @@ def Hough_Transform(array):
                 lines[int(r2)][int(t)]+=1
 
 
+    min_distance = dist_max
+    angle_to_min = 0
     #If any of the squares in the map are above the threshold, they represent a line the robot detected
     for i in range(precision_R):
         #print{" "}
         for j in range(precision_t):
+            #print("Box[{}][{}] - {}").format(i,j,lines[i][j])
             if lines[i][j] > threshold:
                 r = i*((dist_max-dist_min)/precision_R)+dist_min
                 t = j*360/precision_t
+                if r < min_distance:
+                    angle_to_min = t
+                    min_distance = r
+
                 print("Line with coordinates ({},{}) in polar (degrees) cell value={}").format(r,t,lines[i][j])
-                f = open("FileForDownload", "w")
-                f.write("[")
-                f.write(str(r))
-                f.write(",")
-                f.write(str(t))
-                f.write(str(lines[i][j]))
-                f.write("]")
-                f.close()
+                # f = open("FileForDownload", "w")
+                # f.write("[")
+                # f.write(str(r))
+                # f.write(",")
+                # f.write(str(t))
+                # f.write(str(lines[i][j]))
+                # f.write("]")
+                # f.close()
 
 
-        
-
-
+    #Return the angle to the closest wall
+    print("Returning the cloest wall: {}").format(angle_to_min)
+    return angle_to_min
 
 
 
@@ -336,6 +343,7 @@ class TurtlebotState:
         self.ready = False
         self.current_action = None
         self.meter = False
+        self.Hough_T = 0
 
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
@@ -373,7 +381,7 @@ class TurtlebotState:
         self.closest_obj_front = findObjFront(msg.ranges)
         self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
         self.closest_obj_front_dist = self.closest_obj_front[1]
-        self.Hough_T = Hough_Transform(msg.ranges)
+        #self.Hough_T = Hough_Transform(msg.ranges)
 
         self.ready = True
 
@@ -426,12 +434,30 @@ def main():
     rate = rospy.Rate(20)
 
 
-    while not rospy.is_shutdown():
-        rate.sleep()
+    # while not rospy.is_shutdown():
+    #     rate.sleep()
+    #     print("Closest Wall at angle:{}".format(state.Hough_T))
 
     # pause for a bit
-    #for i in range(40):
-    #   rate.sleep()
+    for i in range(20):
+       rate.sleep()
+
+
+    angle = Hough_Transform(state.scan_msg)   
+
+    print("Closest Wall at angle:{}".format(angle))
+
+
+
+    state.current_action = Turn(state,-np.deg2rad(angle))
+    while not rospy.is_shutdown():
+        if not state.current_action.done:
+            state.current_action.act()
+        else:
+            break
+        rate.sleep()
+
+    
 
     # #####################################
     # #Follow Object Code
@@ -495,3 +521,6 @@ def main():
 
 
 main()
+
+
+
