@@ -72,17 +72,17 @@ def Hough_Transform(array):
             r  = Cartesian[i][0]*np.cos(np.deg2rad(j)) + Cartesian[i][1]*np.sin(np.deg2rad(j))
             if (r > dist_min) & (r < dist_max):
                 #integer division to put r/theta into a discrete box on the hough map
-                r = (r-dist_min)/(2*pi/precision)
+                r = (r-dist_min)/((dist_max-dist_min)/precision)
                 x1 = np.deg2rad(j)
-                x2 = float(dist_max)/float(precision)
+                x2 = (2*pi)/precision
                 t = x1/x2
 
                 lines[int(r)][int(t)]+=1
-                #print("Adding a Hough point at {},{}").format(int(r),int(t))
+                print("Adding a Hough point at {},{}").format(int(r),int(t))
 
     #If any of the squares in the map are above the threshold, they represent a line the robot detected
     for i in range(precision):
-        print{" "}
+        #print{" "}
         for j in range(precision):
             #if lines[i][j] > threshold:
                 #print("Line with coordinates ({},{}) in polar").format(i,j)
