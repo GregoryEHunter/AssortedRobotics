@@ -86,6 +86,15 @@ def Hough_Transform(array):
                 r = i*((dist_max-dist_min)/precision_R)+dist_min
                 t = j*360/precision_t
                 print("Line with coordinates ({},{}) in polar (degrees) cell value={}").format(r,t,lines[i][j])
+                f = open("FileForDownload", "w")
+                f.write("[")
+                f.write(str(r))
+                f.write(",")
+                f.write(str(t))
+                f.write(str(lines[i][j]))
+                f.write("]")
+                f.close()
+
 
         
 
