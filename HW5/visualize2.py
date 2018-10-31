@@ -91,8 +91,12 @@ def Hough_Transform(array):
 
     for index_pair in range(len(indicies)):
         rho_box = indicies[index_pair][0]
-        print("rho_box" + str(rho_box))
         theta_box = indicies[index_pair][1]
+
+        # get midpoints of each box
+        coordinate[index_pair][0] = 
+        coordinate[index_pair][0] = 
+
 
     # min_distance = dist_max
     # angle_to_min = 0
