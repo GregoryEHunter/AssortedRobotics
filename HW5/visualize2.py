@@ -1,3 +1,5 @@
+from __future__ import division
+
 import rospy
 import numpy as np
 from nav_msgs.msg import Odometry
@@ -49,14 +51,17 @@ def findObjFront(array):
 def Hough_Transform(array):
     print("Entered Hough")
 
-    boxes_theta = 36    # num of boxes of angles
+    boxes_theta = 45    # num of boxes of angles
     boxes_rho = 100   # num of boxes for rho
     max_rho = 4         # min rho is 0
-    thresh = 400
+    thresh = 450
 
     # precomputations to save time
     ratio_boxPerRho = boxes_rho/max_rho
     ratio_boxPerTheta = boxes_theta/360
+
+    ratio_thetaPerBox = 360/boxes_theta
+    ratio_rhoPerBox = max_rho/boxes_rho
 
     
     # initialize xy array with 2 cols and 360 rows
@@ -79,102 +84,39 @@ def Hough_Transform(array):
             
             # not inclusive of max_rho
             if (rho < max_rho) and (rho > 0):
-                box = [int(floor(ratio_boxPerRho * rho)), int(floor(ratio_boxPerTheta * theta))]
+                box = (int(ratio_boxPerRho * rho), int(ratio_boxPerTheta * theta))
 
                 # increment the respective rho, theta box
-                accumulator[box[0]][box[1]]+=1
+                accumulator[box[0], box[1]]+=1
 
 
 
     # figure out all points in accumulator that are greater than thresh
     indicies = np.argwhere(accumulator > thresh)       # returns all indicies in array where boolean condition matches
 
+    #coordinate = [[0 for col in range(len(indicies))] for row in range(2)]
+    coordinate = []
+
+
+
     for index_pair in range(len(indicies)):
         rho_box = indicies[index_pair][0]
         theta_box = indicies[index_pair][1]
 
         # get midpoints of each box
-        coordinate[index_pair][0] = 
-        coordinate[index_pair][0] = 
+        coordinate.append((rho_box * ratio_rhoPerBox + ratio_rhoPerBox/2, 
+            theta_box * ratio_thetaPerBox + ratio_thetaPerBox/2))
 
 
-    # min_distance = dist_max
-    # angle_to_min = 0
-    # #If any of the squares in the map are above the thresh, they represent a line the robot detected
-    # for i in range(boxes_rho):
-    #     #print{" "}
-    #     for j in range(boxes_theta):
-    #         #print("Box[{}][{}] - {}").format(i,j,accumulator[i][j])
-    #         if accumulator[i][j] > thresh:
-    #             r = i*((dist_max-dist_min)/boxes_rho)+dist_min
-    #             t = j*360/boxes_theta
-    #             if r < min_distance:
-    #                 angle_to_min = t
-    #                 min_distance = r
+    closest_dist = max_rho
 
-    #             print("Line with coordinates ({},{}) in polar (degrees) cell value={}").format(r,t,accumulator[i][j])
-    #             # f = open("FileForDownload", "w")
-    #             # f.write("[")
-    #             # f.write(str(r))
-    #             # f.write(",")
-    #             # f.write(str(t))
-    #             # f.write(str(accumulator[i][j]))
-    #             # f.write("]")
-    #             # f.close()
+    for i in range(len(coordinate)):
+        curr = coordinate[i][0]
+        if curr < closest_dist:
+            closest_dist = curr
+            goal_angle = coordinate[i][1]      # get goal angle
 
-
-    # #Return the angle to the closest wall
-    # print("Returning the cloest wall: {}").format(angle_to_min)
-    # return angle_to_min
-
-
-
-    # for i in range(360):
-    #     for j in range(360):
-    #         r  = xyArray[i][0]*np.cos(np.deg2rad(j)) + xyArray[i][1]*np.sin(np.deg2rad(j))
-    #         if (r > dist_min) & (r < dist_max):
-    #             #integer division to put r/theta into a discrete box on the hough map
-    #             r2 = (r-dist_min)/((dist_max-dist_min)/boxes_rho)
-    #             x1 = np.deg2rad(j)
-    #             x2 = (2*pi)/boxes_theta
-    #             t = x1/x2
-
-    #             accumulator[int(r2)][int(t)]+=1
-
-    print("Writing to file")
-    string = []
-    for a in range(len(accumulator[0])):
-        for b in range(len(accumulator)):
-            if(len(string) == len(accumulator)):
-                string = []
-            string.append(accumulator[b][a])
-        print string
-
-
-    # with open("accumulator.txt", "w") as f:
-    #     for i in range(len(accumulator)):
-    #         f.write(*accumulator[i])
-    print("DONE writing to file")
-    print(indicies)
-    print("rhos:")
-    print(indicies[0])
-    print("thetas:")
-    print(indicies[1])
-
-
-
-
-
-
-# maybe this is useful:
-# >>> x = np.array([[0,0.2,0.5],[0.05,0.01,0]])
-
-# >>> np.argwhere(x > 0.01)
-# array([[0, 1],
-#        [0, 2],
-#        [1, 0]])   
-
-
+    return goal_angle
 
 
 
@@ -193,7 +135,7 @@ class Turn:
         
         self.target_angle = rectify_angle_pi(state.angle + angle)
         
-        rospy.loginfo("Target angle: " + str( self.target_angle))
+        rospy.loginfo("Target angle: " + str(self.target_angle))
         self.done = False
 
     def act(self):
@@ -501,15 +443,30 @@ def main():
     rospy.on_shutdown(state.shutdown)
     rate = rospy.Rate(20)
 
-    Hough_Transform(state.scan_msg)   
+    # pause for a bit
+    for i in range(50):
+       rate.sleep()
 
+    angle = Hough_Transform(state.scan_msg) 
+    angle = rectify_angle_pi(degrees_to_radians(angle + 90))  
+
+    print("Closest Wall at angle:{}".format(angle))
+
+
+
+    state.current_action = Turn(state, angle)
     while not rospy.is_shutdown():
+        if not state.current_action.done:
+            state.current_action.act()
+        else:
+            break
         rate.sleep()
+
+
+    # while not rospy.is_shutdown():
+    #     rate.sleep()
         # print("Closest Wall at angle:{}".format(state.Hough_T))
 
-    # pause for a bit
-    # for i in range(20):
-    #    rate.sleep()
 
 
 
@@ -589,6 +546,8 @@ def main():
 
 
 main()
+
+
 
 
 
