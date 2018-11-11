@@ -107,6 +107,7 @@ def Hough_Transform(array):
         coordinate.append((rho_box * ratio_rhoPerBox + ratio_rhoPerBox/2, 
             theta_box * ratio_thetaPerBox + ratio_thetaPerBox/2))
 
+    print(coordinate)
 
     closest_dist = max_rho
 
@@ -353,7 +354,6 @@ class TurtlebotState:
         self.ready = False
         self.current_action = None
         self.meter = False
-        self.Hough_T = 0
 
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
