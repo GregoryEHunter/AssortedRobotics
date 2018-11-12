@@ -2,6 +2,9 @@ from __future__ import division
 
 import rospy
 import numpy as np
+
+import threading
+
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
@@ -27,307 +30,31 @@ def yaw_from_odom(msg):
     return yaw
 
 
-def findObj360(array):
+def findLandmarks(robot_x, robot_y, robot_head, array, n = 3):
     """
-    given an array of ranges, get the angle of the closest object around the robot
+    given an array of ranges, get n closest landmarks around the robot
+
+    The landmark list will consist of a list of x,y coordinates computed as follows:
+        landmark_x = robot_x + radius * cos(theta + robot_heading)
+        landmark_y = robot_y + radius * sin(theta + robot_heading)
     """
-    temp = min(i for i in array if i > 0.0)
-    return (array.index(temp), temp)
 
+    # get the indicies of n minimum values
+    arr = np.array(array)
+    landmark_indicies = arr.argsort()[:n]
 
-def findObjFront(array):
     """
-    given an array of ranges, get the angle of the closest object 90 degrees in front of robot 
-    (45 in each direction)
+    for each index returned, store a tuple containing the n closest objects 
+    theta = index
+    r = value
     """
-    temp = min(i for i in array[0:45] if i > 0.0)
-    temp2 = min(i for i in array[315:360] if i > 0.0)
-
-    if temp <= temp2:
-        return (array[0:45].index(temp), temp)
-    else:
-        return (array[315:360].index(temp2) + 315, temp2)
-
-def Hough_Transform(array):
-    print("Entered Hough")
-
-    boxes_theta = 45    # num of boxes of angles
-    boxes_rho = 100   # num of boxes for rho
-    max_rho = 4         # min rho is 0
-    thresh = 450
-
-    # precomputations to save time
-    ratio_boxPerRho = boxes_rho/max_rho
-    ratio_boxPerTheta = boxes_theta/360
-
-    ratio_thetaPerBox = 360/boxes_theta
-    ratio_rhoPerBox = max_rho/boxes_rho
-
-    
-    # initialize xy array with 2 cols and 360 rows
-    xyArray = [[0 for col in range(2)] for row in range(360)]
-
-    for theta in range(360):
-        xyArray.insert(theta, [array[theta]*cos(np.deg2rad(theta)), array[theta]*sin(np.deg2rad(theta))])
-
-
-    # accumulator based on rho and theta with all values initialized to 0's
-    accumulator = np.zeros((boxes_rho, boxes_theta))
-
-
-    # for each x,y point
-    for xy in range(len(xyArray)):
-        # for each theta angle
-        for theta in range(360):
-            # calculate rho
-            rho = xyArray[xy][0] * cos(np.deg2rad(theta)) + xyArray[xy][1] * sin(np.deg2rad(theta))
-            
-            # not inclusive of max_rho
-            if (rho < max_rho) and (rho > 0):
-                box = (int(ratio_boxPerRho * rho), int(ratio_boxPerTheta * theta))
-
-                # increment the respective rho, theta box
-                accumulator[box[0], box[1]]+=1
-
-
-
-    # figure out all points in accumulator that are greater than thresh
-    indicies = np.argwhere(accumulator > thresh)       # returns all indicies in array where boolean condition matches
-
-    #coordinate = [[0 for col in range(len(indicies))] for row in range(2)]
-    coordinate = []
-
-
-
-    for index_pair in range(len(indicies)):
-        rho_box = indicies[index_pair][0]
-        theta_box = indicies[index_pair][1]
-
-        # get midpoints of each box
-        coordinate.append((rho_box * ratio_rhoPerBox + ratio_rhoPerBox/2, 
-            theta_box * ratio_thetaPerBox + ratio_thetaPerBox/2))
-
-    print(coordinate)
-
-    closest_dist = max_rho
-
-    for i in range(len(coordinate)):
-        curr = coordinate[i][0]
-        if curr < closest_dist:
-            closest_dist = curr
-            goal_angle = coordinate[i][1]      # get goal angle
-
-    return goal_angle
-
-
-
-class Turn:
-    """
-    turn the robot by an angle defined in radians, if angle is defined as positive the robot will 
-    turn clockwise
-    """
-    def __init__(self, state, angle):
-        self.state = state
-
-        if angle >= 0:
-            self.clockwise = False
-        else:
-            self.clockwise = True
-        
-        self.target_angle = rectify_angle_pi(state.angle + angle)
-        
-        rospy.loginfo("Target angle: " + str(self.target_angle))
-        self.done = False
-
-    def act(self):
-        error = abs(self.target_angle - self.state.angle)
-        rospy.loginfo("Current angle: " + str( self.state.angle))
-
-        if(error > .02):
-            move_cmd = Twist()
-            if self.clockwise:
-                move_cmd.angular.z = -.2
-            else:
-                move_cmd.angular.z = .2
-            self.state.cmd_vel.publish(move_cmd)
-
-        else:
-            self.state.cmd_vel.publish(Twist())
-            self.done = True
-
-
-class Drive:
-    """
-    drive the robot by a certain distance in meters forwards or backwards. If the distance is
-    negative, the robot will move backwards.
-    """
-    def __init__(self, state, distance):
-        self.state = state
-
-        self.init_x = state.x
-        self.init_y = state.y
-
-        if distance >= 0:
-            self.forward = True
-        else:
-            self.forward = False
-
-        self.target_distance = abs(distance)      
-        rospy.loginfo("Distance to Travel: " + str(self.target_distance))
-        self.done = False
-
-    def act(self):
-        error = abs(self.target_distance - euclidian_distance(self.init_x, self.state.x, 
-            self.init_y, self.state.y))
-        rospy.loginfo("Current x, y: " + str( self.state.x) + str(self.state.y))
-
-        if(error > .02):
-            move_cmd = Twist()
-            if self.forward:
-                move_cmd.linear.x = .2
-            else:
-                move_cmd.linear.x = -.2
-            self.state.cmd_vel.publish(move_cmd)
-
-        else:
-            self.state.cmd_vel.publish(Twist())
-            self.done = True
-
-
-class TurnToObject:
-    """
-    the robot uses tha range finder to grab the direction of the closest object and rotate such 
-    that its heading angle points towards the closest object.
-    """
-    def __init__(self, state):
-        self.state = state
-        self.done = False
-
-    def act(self):
-        goal = rectify_angle_pi(self.state.closest_obj_ang)
-        rospy.loginfo("Angle of Closest Object: " + str(goal))
-        rospy.loginfo("Angle of Closest Object in Front: " + str(rectify_angle_pi(
-            self.state.closest_obj_front_ang)))
-
-        self.state.current_action = Turn(self.state, goal)
-        self.done = True
-
-
-class FollowObject:
-    """
-    the robot follows the closest object in front of it at an angle of +pi/2 and -pi/2 by sending
-    angular and linear command velocities.
-    """
-    def __init__(self, state):
-        self.state = state
-
-        # error and bound limit constants
-        self.lower_bound = 0.4
-        self.upper_bound = 0.6
-        self.angle_err_lim = 0.04
-
-        goal_angle = rectify_angle_pi(self.state.closest_obj_front_ang)
-
-        if goal_angle >= 0:
-            self.clockwise = False
-        else:
-            self.clockwise = True
-        
-        self.target_angle = rectify_angle_pi(self.state.angle + goal_angle)
-        
-        self.done = False
-
-    def act(self):
-        goal = rectify_angle_pi(self.state.closest_obj_front_ang)
-        error = abs(self.target_angle - self.state.angle)
-
-        move_cmd = Twist()
-
-        # sends an angular command velocity if the current robot angle is off by .04 radians
-        if(error > self.angle_err_lim):
-            if self.clockwise:
-                move_cmd.angular.z = -.4
-            else:
-                move_cmd.angular.z = .4
-        else:
-            move_cmd.angular.z = 0
-        
-        # sends a linear command velocity if the closest object distance is not between 0.4 and 0.6m
-        if (self.state.closest_obj_front_dist > self.upper_bound or 
-            self.state.closest_obj_front_dist < self.lower_bound):
-            if(self.state.closest_obj_front_dist - 0.5 > 0):
-                move_cmd.linear.x = .15
-            else:
-                move_cmd.linear.x = -.15
-
-        else:
-            move_cmd.linear.x = 0
-
-        self.state.cmd_vel.publish(move_cmd)
-
-        # sends 0 command velocity if the robot is in a desired position
-        if(error <= self.angle_err_lim and (self.state.closest_obj_front_dist <= self.upper_bound 
-                and self.state.closest_obj_front_dist >= self.lower_bound)):
-            move_cmd = Twist()
-            self.state.cmd_vel.publish(Twist())
-        
-        self.done = True              
-
-
-class WallFollow:
-    def __init__(self, state):
-        self.state = state
-
-        # error and bound limit constants
-        self.lower_bound = 0.9
-        self.upper_bound = 1.1
-        self.angle_err_lim = 0.04
-
-
-        goal_angle = rectify_angle_pi(self.state.closest_obj_front_ang)
-
-        if goal_angle >= 0:
-            self.clockwise = False
-        else:
-            self.clockwise = True
-        
-        self.target_angle = rectify_angle_pi(self.state.angle + goal_angle)
-        
-        self.done = False
-
-    def act(self):
-        goal = rectify_angle_pi(self.state.closest_obj_front_ang)
-        error = abs(self.target_angle - self.state.angle)
-
-        move_cmd = Twist()
-
-        if(error > self.angle_err_lim):
-            if self.clockwise:
-                move_cmd.angular.z = -.4
-            else:
-                move_cmd.angular.z = .4
-        else:
-            move_cmd.angular.z = 0
-        
-        if (self.state.closest_obj_front_dist > self.upper_bound or self.state.closest_obj_front_dist < self.lower_bound):
-            if(self.state.closest_obj_front_dist - 0.5 > 0):
-                move_cmd.linear.x = .15
-            else:
-                move_cmd.linear.x = -.15
-
-        else:
-            move_cmd.linear.x = 0
-
-        self.state.cmd_vel.publish(move_cmd)
-        print(str(error) + "\tERROR")
-        print(str(self.state.closest_obj_front_dist) + "closest_obj_front_dist")
-        if(error <= self.angle_err_lim and (self.state.closest_obj_front_dist <= self.upper_bound and self.state.closest_obj_front_dist >= self.lower_bound)):
-            move_cmd = Twist()
-            print("setting meter to true GOTHERE")
-            self.state.cmd_vel.publish(Twist())
-            self.state.meter = True
-        
-        self.done = True              
+    landmark_list = []
+    for index in landmark_indicies:
+        landmark_list.append([robot_x + array[index] * cos(degrees_to_radians(index) + robot_head), 
+            robot_y + array[index] * sin(degrees_to_radians(index) + robot_head)])
+
+    print(landmark_list)
+    return landmark_list
 
 
 class TurtlebotState:
@@ -336,24 +63,55 @@ class TurtlebotState:
     """
     def __init__(self):
 
+        # start up the subscribers to monitor state
+        self.subscriber_odom = rospy.Subscriber("/odom", Odometry, self.update_odom)
+        self.subscriber_scan = rospy.Subscriber("/scan", LaserScan, self.update_scan)
+
+
+        """
+        save message contents for filing
+        """
         self.pose_msg = None
         self.yaw_msg = None
         self.scan_msg = None
 
         self.dict = {"position":None, "orientation" : None, "scan" : None}
 
-        # start up the subscribers to monitor state
-        self.subscriber_odom = rospy.Subscriber("/odom", Odometry, self.update_odom)
-        self.subscriber_scan = rospy.Subscriber("/scan", LaserScan, self.update_scan)
+        """
+        robot save data to file
+        """
+        # remove the robot data file
+        # self.filename = "robot.txt"
+        # if os.path.exists(self.filename):
+        #     os.remove(self.filename)
 
-        self.data_to_file()
+        # self.write_num = 0
+        #self.data_to_file()
 
+        """
+        keep running total of global position based on odom data
+        """
         self.angle = None
         self.x = None
         self.y = None
+
+        """
+        keep running total of error terms
+        """
+        self.x_err = 0
+        self.y_err = 0
+        self.angle_err = 0
+
+        """
+        store previous and current landmark list for comparisson purposes
+        """
+        self.prev_landmarks = None
+        self.curr_landmarks = None
+
+
         self.ready = False
         self.current_action = None
-        self.meter = False
+
 
         self.cmd_vel = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
@@ -364,6 +122,7 @@ class TurtlebotState:
             rate = rospy.Rate(20)
             rate.sleep()
 
+
     def update_odom(self, msg):
         """
         updates odometry information of the robot.
@@ -372,7 +131,6 @@ class TurtlebotState:
 
         self.angle = yaw_from_odom(msg)
         self.yaw_msg = self.angle
-
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
 
@@ -384,47 +142,71 @@ class TurtlebotState:
         """
         self.scan_msg = msg.ranges
 
-        # in 360 degree range
-        self.closest_obj_ang = degrees_to_radians(findObj360(msg.ranges)[0])
+        self.ready = True
 
-        # in 90 degree range in front
-        self.closest_obj_front = findObjFront(msg.ranges)
-        self.closest_obj_front_ang = degrees_to_radians(self.closest_obj_front[0])
-        self.closest_obj_front_dist = self.closest_obj_front[1]
-        #self.Hough_T = Hough_Transform(msg.ranges)
+    def set_prev_landmarks(self):
+        if self.prev_landmarks is None:
+            self.prev_landmarks = findLandmarks(self.x, self.y, self.angle, self.scan_msg)
+
+
+    def update_error(self):
+
+        print("updating the error terms")
+        # get current landmark data 
+        # NOTE: (not sure if this should be based on self.x or self.x + self.x_err)
+        self.curr_landmarks = findLandmarks(self.x, self.y, self.angle, self.scan_msg)
+        rospy.sleep(1)
+
+
+        # calculate where we expect the prev_landmarks to be with the change in odom data
+        # CODE GOES HERE
+
+        # find difference (error) in x,y,theta between current landmarks and expectations
+        # CODE GOES HERE
+
+        # update x_err, y_err, angle_err
+        # CODE GOES HERE
+
+
+
+        # let prev_landmarks = curr_landmarks
+        self.prev_landmarks = self.curr_landmarks
+
+
+
 
         self.ready = True
 
-    def data_to_file(self):
+    # def data_to_file(self):
+    #     # convert data to JSON format
+    #     rospy.Rate(5).sleep()
+    #     # string manipulation and dictionary addition for position
+    #     self.pose_msg = "\"" + str(self.pose_msg).replace("\n", "\n\"")
+    #     self.pose_msg = str(self.pose_msg).replace(":", "\":")
+    #     self.dict["position"] = str(self.pose_msg)
+    #     rospy.Rate(5).sleep()
 
-        # convert data to JSON format
-        rospy.Rate(5).sleep()
-        # string manipulation and dictionary addition for position
-        self.pose_msg = "\"" + str(self.pose_msg).replace("\n", "\n\"")
-        self.pose_msg = str(self.pose_msg).replace(":", "\":")
-        self.dict["position"] = str(self.pose_msg)
-        rospy.Rate(5).sleep()
+    #     # string manipultation and dictionary addition for scanning data
+    #     self.dict["scan"] = "\"ranges\" : " + str(self.scan_msg)
+    #     rospy.Rate(5).sleep()
 
-        # string manipultation and dictionary addition for scanning data
-        self.dict["scan"] = "\"ranges\" : " + str(self.scan_msg)
-        rospy.Rate(5).sleep()
+    #     # string manipultation and dictionary addition for yaw data
+    #     self.dict["orientation"] = "\"yaw\" : " + str(self.yaw_msg)
 
-        # string manipultation and dictionary addition for yaw data
-        self.dict["orientation"] = "\"yaw\" : " + str(self.yaw_msg)
+    #     with open("robot.txt", "w") as file:
+    #         file.write("{\"robot\": {\n")
+    #         for key, value in self.dict.iteritems():
+    #             if value:
+    #                 # all values should be comma separated, lists should have square brackets
+    #                 val = str(value).replace("\n", ",\n")
+    #                 val = str(val).replace("(", "[")
+    #                 val = str(val).replace(")", "]")
 
-        with open("robot.txt", "w") as file:
-            file.write("{\"robot\": {\n")
-            for key, value in self.dict.iteritems():
-                if value:
-                    # all values should be comma separated, lists should have square brackets
-                    val = str(value).replace("\n", ",\n")
-                    val = str(val).replace("(", "[")
-                    val = str(val).replace(")", "]")
+    #                 file.write("\""+str(key) + "\"" + ":{ \n" + str(val) + "}")
+    #             if(key != "scan"):
+    #                 file.write(",\n")
+    #         file.write("}}")
 
-                    file.write("\""+str(key) + "\"" + ":{ \n" + str(val) + "}")
-                if(key != "scan"):
-                    file.write(",\n")
-            file.write("}}")
 
     def shutdown(self):
         """
@@ -436,6 +218,12 @@ class TurtlebotState:
         rospy.loginfo("Goodbye.")
 
 
+    # def stateEstimate(self):
+    #   threading.Timer(2.0, printit).start()
+    #   print "Hello, World!"
+
+
+
 
 def main():
     rospy.init_node("turn_to")
@@ -443,111 +231,29 @@ def main():
     rospy.on_shutdown(state.shutdown)
     rate = rospy.Rate(20)
 
-    # pause for a bit
-    for i in range(50):
+    # pause for a bitr
+    for i in range(10):
        rate.sleep()
 
-    angle = Hough_Transform(state.scan_msg) 
-    angle = rectify_angle_pi(degrees_to_radians(angle + 90))  
+    state.set_prev_landmarks()
+    # distance = 2
+    # state.current_action = Drive(state, distance)
 
-    print("Closest Wall at angle:{}".format(angle))
-
-
-
-    state.current_action = Turn(state, angle)
+    count = 0
     while not rospy.is_shutdown():
-        if not state.current_action.done:
-            state.current_action.act()
-        else:
-            break
+        # less elegent way to run a sequence of functions approx every 2 seconds
+        if count == 2:
+            state.update_error()
+
+            count = 0
+        count += 1
+
+        # print("here")
+        # if not state.current_action.done:
+        # state.data_to_file
+            # state.current_action.act()
+        # else:
+        #     break
         rate.sleep()
 
-
-    # while not rospy.is_shutdown():
-    #     rate.sleep()
-        # print("Closest Wall at angle:{}".format(state.Hough_T))
-
-
-
-
-    # print("Closest Wall at angle:{}".format(angle))
-
-
-
-    # state.current_action = Turn(state,-np.deg2rad(angle))
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #         break
-    #     rate.sleep()
-
-    
-
-    # #####################################
-    # #Follow Object Code
-    # # turn to closest object
-    # state.current_action = TurnToObject(state)
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #         break
-    #     rate.sleep()
-
-    # state.current_action = FollowObject(state)
-    # while not rospy.is_shutdown():
-    #     if not state.current_action.done:
-    #         state.current_action.act()
-    #     else:
-    #          state.current_action = WallFollow(state)
-    #     rate.sleep()
-    # #####################################
-
-
- #    ######################################
- #    #Wall Follow Code:
-    # # turn to closest object
- #    state.current_action = TurnToObject(state)
- #    while not rospy.is_shutdown():
- #        if not state.current_action.done:
- #            state.current_action.act()
- #        else:
- #            break
- #        rate.sleep()
-
- #    state.current_action = WallFollow(state)
- #    while not rospy.is_shutdown():
- #        rospy.loginfo("state.meter" + str(state.meter))
- #        if not state.current_action.done:
- #            state.current_action.act()
- #        elif state.meter is True:
- #            break
- #        else:
- #             state.current_action = WallFollow(state)
- #        rate.sleep()
-
- #    state.current_action = Turn(state,-pi/2)
- #    while not rospy.is_shutdown():
- #        if not state.current_action.done:
- #            state.current_action.act()
- #        else:
- #            break
- #        rate.sleep()
-
- #    state.current_action = Drive(state, 1)
- #    while not rospy.is_shutdown():
- #        if not state.current_action.done:
- #            state.current_action.act()
- #        else:
- #            break
- #        rate.sleep()
- #    #########################################
-
-
 main()
-
-
-
-
-
